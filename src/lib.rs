@@ -4,7 +4,7 @@ use std::{
 };
 
 use rusqlite::Connection;
-use tracing::{field::Visit, span};
+use tracing::{field::Visit, level_filters::LevelFilter, span};
 #[cfg(feature = "tracing-log")]
 use tracing_log::NormalizeEvent;
 
@@ -17,20 +17,30 @@ pub fn prepare_database(conn: &Connection) -> rusqlite::Result<()> {
 pub struct Subscriber {
     id: AtomicU64,
     connection: Mutex<Connection>,
+    max_level: LevelFilter,
 }
 
 impl Subscriber {
     pub fn new(connection: Connection) -> Self {
+        Self::with_max_level(connection, LevelFilter::TRACE)
+    }
+
+    pub fn with_max_level(connection: Connection, max_level: LevelFilter) -> Self {
         Self {
             id: AtomicU64::new(1),
             connection: Mutex::new(connection),
+            max_level,
         }
     }
 }
 
 impl tracing::Subscriber for Subscriber {
-    fn enabled(&self, _metadata: &tracing::Metadata<'_>) -> bool {
-        true
+    fn enabled(&self, metadata: &tracing::Metadata<'_>) -> bool {
+        metadata.level() <= &self.max_level
+    }
+
+    fn max_level_hint(&self) -> Option<tracing::level_filters::LevelFilter> {
+        Some(self.max_level)
     }
 
     fn new_span(&self, _span: &span::Attributes<'_>) -> span::Id {
