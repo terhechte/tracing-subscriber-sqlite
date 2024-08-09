@@ -53,10 +53,11 @@ impl tracing::Subscriber for Subscriber {
     fn record_follows_from(&self, _span: &span::Id, _follows: &span::Id) {}
 
     fn event(&self, event: &tracing::Event<'_>) {
-        let mut buf = String::new();
-        let mut visitor = Visitor { message: &mut buf };
+        let mut message = String::new();
 
-        event.record(&mut visitor);
+        event.record(&mut Visitor {
+            message: &mut message,
+        });
 
         #[cfg(feature = "tracing-log")]
         let normalized_meta = event.normalized_metadata();
@@ -64,11 +65,11 @@ impl tracing::Subscriber for Subscriber {
         let meta = normalized_meta.as_ref().unwrap_or_else(|| event.metadata());
         #[cfg(not(feature = "tracing-log"))]
         let meta = event.metadata();
+
         let level = meta.level().as_str();
         let moudle = meta.module_path();
         let file = meta.file();
         let line = meta.line();
-        let message = buf;
 
         let conn = self.connection.lock().unwrap();
         conn.execute(
