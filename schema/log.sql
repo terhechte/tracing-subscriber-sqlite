@@ -3,5 +3,6 @@ CREATE TABLE IF NOT EXISTS logs (
     module TEXT,
     file TEXT,
     line INTEGER,
-    message TEXT NOT NULL
+    message TEXT NOT NULL,
+    structured TEXT NOT NULL
 );

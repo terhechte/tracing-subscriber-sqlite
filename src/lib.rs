@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     fmt::Write,
     sync::{atomic::AtomicU64, Mutex},
 };
@@ -54,9 +55,11 @@ impl tracing::Subscriber for Subscriber {
 
     fn event(&self, event: &tracing::Event<'_>) {
         let mut message = String::new();
+        let mut kvs = HashMap::new();
 
         event.record(&mut Visitor {
             message: &mut message,
+            kvs: &mut kvs,
         });
 
         #[cfg(feature = "tracing-log")]
@@ -73,8 +76,8 @@ impl tracing::Subscriber for Subscriber {
 
         let conn = self.connection.lock().unwrap();
         conn.execute(
-            "INSERT INTO logs (level, module, file, line, message) VALUES (?1, ?2, ?3, ?4, ?5)",
-            (level, moudle, file, line, message),
+            "INSERT INTO logs (level, module, file, line, message, structured) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            (level, moudle, file, line, message, serde_json::to_string(&kvs).unwrap()),
         )
         .unwrap();
     }
@@ -86,14 +89,16 @@ impl tracing::Subscriber for Subscriber {
 
 struct Visitor<'a> {
     pub message: &'a mut String,
-    // todo: store structured key-value data
+    pub kvs: &'a mut HashMap<&'static str, String>, // todo: store structured key-value data
 }
 
 impl<'a> Visit for Visitor<'a> {
     fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
         match field.name() {
             "message" => write!(self.message, "{value:?}").unwrap(),
-            _ => {} // todo: store structured key-value data
+            name => {
+                self.kvs.insert(name, format!("{value:?}"));
+            }
         }
     }
 }
