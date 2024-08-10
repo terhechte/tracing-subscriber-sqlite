@@ -5,6 +5,7 @@ use std::{
 };
 
 use rusqlite::Connection;
+use time::OffsetDateTime;
 use tracing::{field::Visit, level_filters::LevelFilter, span};
 #[cfg(feature = "tracing-log")]
 use tracing_log::NormalizeEvent;
@@ -75,9 +76,10 @@ impl tracing::Subscriber for Subscriber {
         let line = meta.line();
 
         let conn = self.connection.lock().unwrap();
+        let now = OffsetDateTime::now_utc();
         conn.execute(
-            "INSERT INTO logs (level, module, file, line, message, structured) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            (level, moudle, file, line, message, serde_json::to_string(&kvs).unwrap()),
+            "INSERT INTO logs (time, level, module, file, line, message, structured) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            (now, level, moudle, file, line, message, serde_json::to_string(&kvs).unwrap()),
         )
         .unwrap();
     }
