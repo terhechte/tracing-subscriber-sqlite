@@ -29,6 +29,21 @@ impl Subscriber {
         Self::with_max_level(connection, LevelFilter::TRACE)
     }
 
+    pub fn with_details(
+        connection: Mutex<Connection>,
+        max_level: LevelFilter,
+        black_list: Option<Box<[&'static str]>>,
+        white_list: Option<Box<[&'static str]>>,
+    ) -> Self {
+        Self {
+            id: AtomicU64::new(1),
+            connection,
+            max_level,
+            black_list,
+            white_list,
+        }
+    }
+
     pub fn with_max_level(connection: Connection, max_level: LevelFilter) -> Self {
         Self {
             id: AtomicU64::new(1),
@@ -131,6 +146,62 @@ impl<'a> Visit for Visitor<'a> {
             name => {
                 self.kvs.insert(name, format!("{value:?}"));
             }
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct SubscriberBuilder {
+    max_level: LevelFilter,
+    black_list: Option<Box<[&'static str]>>,
+    white_list: Option<Box<[&'static str]>>,
+}
+
+impl SubscriberBuilder {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_max_level(self, max_level: LevelFilter) -> Self {
+        Self { max_level, ..self }
+    }
+
+    pub fn with_black_list(self, black_list: impl IntoIterator<Item = &'static str>) -> Self {
+        Self {
+            black_list: Some(black_list.into_iter().collect()),
+            ..self
+        }
+    }
+
+    pub fn with_white_list(self, white_list: impl IntoIterator<Item = &'static str>) -> Self {
+        Self {
+            white_list: Some(white_list.into_iter().collect()),
+            ..self
+        }
+    }
+
+    pub fn build(self, conn: Connection) -> Subscriber {
+        Subscriber::with_details(
+            Mutex::new(conn),
+            self.max_level,
+            self.black_list,
+            self.white_list,
+        )
+    }
+
+    pub fn build_prepared(self, conn: Connection) -> Result<Subscriber, rusqlite::Error> {
+        prepare_database(&conn)?;
+
+        Ok(self.build(conn))
+    }
+}
+
+impl Default for SubscriberBuilder {
+    fn default() -> Self {
+        Self {
+            max_level: LevelFilter::DEBUG,
+            black_list: None,
+            white_list: None,
         }
     }
 }
