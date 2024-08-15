@@ -143,6 +143,8 @@ impl<'a> Visit for Visitor<'a> {
     fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
         match field.name() {
             "message" => write!(self.message, "{value:?}").unwrap(),
+            #[cfg(feature = "tracing-log")]
+            "log.line" | "log.file" | "log.target" | "log.module_path" => {}
             name => {
                 self.kvs.insert(name, format!("{value:?}"));
             }
