@@ -123,7 +123,7 @@ impl tracing::Subscriber for Subscriber {
         let conn = self.connection.lock().unwrap();
         let now = OffsetDateTime::now_utc();
         conn.execute(
-            "INSERT INTO logs (time, level, module, file, line, message, structured) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            "INSERT INTO logs_v0 (time, level, module, file, line, message, structured) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             (now, level, moudle, file, line, message, serde_json::to_string(&kvs).unwrap()),
         )
         .unwrap();
