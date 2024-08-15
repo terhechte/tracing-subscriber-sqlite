@@ -20,6 +20,8 @@ pub struct Subscriber {
     id: AtomicU64,
     connection: Mutex<Connection>,
     max_level: LevelFilter,
+    black_list: Option<Box<[&'static str]>>,
+    white_list: Option<Box<[&'static str]>>,
 }
 
 impl Subscriber {
@@ -32,13 +34,36 @@ impl Subscriber {
             id: AtomicU64::new(1),
             connection: Mutex::new(connection),
             max_level,
+            black_list: None,
+            white_list: None,
         }
+    }
+
+    pub fn black_list(&self) -> Option<&[&'static str]> {
+        self.black_list.as_deref()
+    }
+
+    pub fn white_list(&self) -> Option<&[&'static str]> {
+        self.white_list.as_deref()
     }
 }
 
 impl tracing::Subscriber for Subscriber {
     fn enabled(&self, metadata: &tracing::Metadata<'_>) -> bool {
         metadata.level() <= &self.max_level
+            && metadata
+                .module_path()
+                .map(|m| {
+                    let starts_with = |module| m.starts_with(module);
+                    self.white_list()
+                        .map(|modules| modules.iter().all(starts_with))
+                        .unwrap_or(true)
+                        && !(self
+                            .black_list()
+                            .map(|modules| modules.iter().any(starts_with))
+                            .unwrap_or(false))
+                })
+                .unwrap_or(true)
     }
 
     fn max_level_hint(&self) -> Option<tracing::level_filters::LevelFilter> {
@@ -55,18 +80,15 @@ impl tracing::Subscriber for Subscriber {
     fn record_follows_from(&self, _span: &span::Id, _follows: &span::Id) {}
 
     fn event(&self, event: &tracing::Event<'_>) {
-        let mut message = String::new();
-        let mut kvs = HashMap::new();
-
-        event.record(&mut Visitor {
-            message: &mut message,
-            kvs: &mut kvs,
-        });
-
         #[cfg(feature = "tracing-log")]
         let normalized_meta = event.normalized_metadata();
         #[cfg(feature = "tracing-log")]
-        let meta = normalized_meta.as_ref().unwrap_or_else(|| event.metadata());
+        let meta = match normalized_meta.as_ref() {
+            Some(meta) if self.enabled(meta) => meta,
+            None => event.metadata(),
+            _ => return,
+        };
+
         #[cfg(not(feature = "tracing-log"))]
         let meta = event.metadata();
 
@@ -74,6 +96,14 @@ impl tracing::Subscriber for Subscriber {
         let moudle = meta.module_path();
         let file = meta.file();
         let line = meta.line();
+
+        let mut message = String::new();
+        let mut kvs = HashMap::new();
+
+        event.record(&mut Visitor {
+            message: &mut message,
+            kvs: &mut kvs,
+        });
 
         let conn = self.connection.lock().unwrap();
         let now = OffsetDateTime::now_utc();
