@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS logs (
+CREATE TABLE IF NOT EXISTS logs_v0 (
     time TEXT NOT NULL,
     level TEXT NOT NULL,
     module TEXT,
