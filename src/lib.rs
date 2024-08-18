@@ -29,7 +29,7 @@ impl Subscriber {
         Self::with_max_level(connection, LevelFilter::TRACE)
     }
 
-    pub fn with_details(
+    fn with_details(
         connection: Mutex<Connection>,
         max_level: LevelFilter,
         black_list: Option<Box<[&'static str]>>,
@@ -45,13 +45,7 @@ impl Subscriber {
     }
 
     pub fn with_max_level(connection: Connection, max_level: LevelFilter) -> Self {
-        Self {
-            id: AtomicU64::new(1),
-            connection: Mutex::new(connection),
-            max_level,
-            black_list: None,
-            white_list: None,
-        }
+        Self::with_details(Mutex::new(connection), max_level, None, None)
     }
 
     pub fn black_list(&self) -> Option<&[&'static str]> {
