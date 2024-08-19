@@ -63,14 +63,10 @@ impl tracing::Subscriber for Subscriber {
             && metadata
                 .module_path()
                 .map(|m| {
-                    let starts_with = |module| m.starts_with(module);
-                    self.white_list()
-                        .map(|modules| modules.iter().all(starts_with))
-                        .unwrap_or(true)
-                        && !(self
-                            .black_list()
-                            .map(|modules| modules.iter().any(starts_with))
-                            .unwrap_or(false))
+                    let starts_with = |module: &&str| m.starts_with(module);
+                    let has_module = |modules: &[&str]| modules.iter().any(starts_with);
+                    self.white_list().map(has_module).unwrap_or(true)
+                        && !(self.black_list().map(has_module).unwrap_or(false))
                 })
                 .unwrap_or(true)
     }
@@ -162,6 +158,7 @@ impl SubscriberBuilder {
         Self { max_level, ..self }
     }
 
+    /// A log will not be recorded if its module path starts with any of item in the black list.
     pub fn with_black_list(self, black_list: impl IntoIterator<Item = &'static str>) -> Self {
         Self {
             black_list: Some(black_list.into_iter().collect()),
@@ -169,6 +166,7 @@ impl SubscriberBuilder {
         }
     }
 
+    /// A log may be recorded only if its module path starts with any of item in the white list.
     pub fn with_white_list(self, white_list: impl IntoIterator<Item = &'static str>) -> Self {
         Self {
             white_list: Some(white_list.into_iter().collect()),
