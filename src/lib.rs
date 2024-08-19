@@ -60,15 +60,12 @@ impl Subscriber {
 impl tracing::Subscriber for Subscriber {
     fn enabled(&self, metadata: &tracing::Metadata<'_>) -> bool {
         metadata.level() <= &self.max_level
-            && metadata
-                .module_path()
-                .map(|m| {
-                    let starts_with = |module: &&str| m.starts_with(module);
-                    let has_module = |modules: &[&str]| modules.iter().any(starts_with);
-                    self.white_list().map(has_module).unwrap_or(true)
-                        && !(self.black_list().map(has_module).unwrap_or(false))
-                })
-                .unwrap_or(true)
+            && metadata.module_path().map_or(true, |m| {
+                let starts_with = |module: &&str| m.starts_with(module);
+                let has_module = |modules: &[&str]| modules.iter().any(starts_with);
+                self.white_list().map_or(true, has_module)
+                    && !(self.black_list().map_or(false, has_module))
+            })
     }
 
     fn max_level_hint(&self) -> Option<tracing::level_filters::LevelFilter> {
