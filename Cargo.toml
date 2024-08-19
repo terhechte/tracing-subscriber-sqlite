@@ -2,6 +2,11 @@
 name = "tracing-subscriber-sqlite"
 version = "0.1.0"
 edition = "2021"
+homepage = "https://github.com/ProjectAnni/tracing-subscriber-sqlite"
+repository = "https://github.com/ProjectAnni/tracing-subscriber-sqlite"
+license = "MIT"
+authors = ["snylonue <snylonue@gmail.com>"]
+description = "A tracing Subscriber to send log to sqlite database."
 
 [dependencies]
 rusqlite = { version = "0.30", features = ["bundled", "time"] }
