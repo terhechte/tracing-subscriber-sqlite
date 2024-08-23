@@ -16,6 +16,7 @@ pub fn prepare_database(conn: &Connection) -> rusqlite::Result<()> {
     conn.execute(SQL_SCHEMA, ()).map(|_| {})
 }
 
+#[derive(Debug)]
 pub struct Subscriber {
     id: AtomicU64,
     connection: Mutex<Connection>,
