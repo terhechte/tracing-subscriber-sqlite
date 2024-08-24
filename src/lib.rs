@@ -1,24 +1,20 @@
+mod db;
+
 use std::{
     collections::HashMap,
     fmt::Write,
-    sync::{atomic::AtomicU64, Mutex},
+    sync::{atomic::AtomicU64, Arc, RwLock},
 };
 
+use db::{prepare_database, LogHandle};
 use rusqlite::Connection;
-use time::OffsetDateTime;
 use tracing::{field::Visit, level_filters::LevelFilter, span};
 #[cfg(feature = "tracing-log")]
 use tracing_log::NormalizeEvent;
 
-pub const SQL_SCHEMA: &str = include_str!("../schema/log.sql");
-
-pub fn prepare_database(conn: &Connection) -> rusqlite::Result<()> {
-    conn.execute(SQL_SCHEMA, ()).map(|_| {})
-}
-
 pub struct Subscriber {
     id: AtomicU64,
-    connection: Mutex<Connection>,
+    logger: LogHandle,
     max_level: LevelFilter,
     black_list: Option<Box<[&'static str]>>,
     white_list: Option<Box<[&'static str]>>,
@@ -30,14 +26,14 @@ impl Subscriber {
     }
 
     fn with_details(
-        connection: Mutex<Connection>,
+        logger: RwLock<Connection>,
         max_level: LevelFilter,
         black_list: Option<Box<[&'static str]>>,
         white_list: Option<Box<[&'static str]>>,
     ) -> Self {
         Self {
             id: AtomicU64::new(1),
-            connection,
+            logger: LogHandle(Arc::new(logger)),
             max_level,
             black_list,
             white_list,
@@ -45,7 +41,7 @@ impl Subscriber {
     }
 
     pub fn with_max_level(connection: Connection, max_level: LevelFilter) -> Self {
-        Self::with_details(Mutex::new(connection), max_level, None, None)
+        Self::with_details(RwLock::new(connection), max_level, None, None)
     }
 
     pub fn black_list(&self) -> Option<&[&'static str]> {
@@ -54,6 +50,10 @@ impl Subscriber {
 
     pub fn white_list(&self) -> Option<&[&'static str]> {
         self.white_list.as_deref()
+    }
+
+    pub fn log_handle(&self) -> LogHandle {
+        self.logger.clone()
     }
 }
 
@@ -95,7 +95,7 @@ impl tracing::Subscriber for Subscriber {
         let meta = event.metadata();
 
         let level = meta.level().as_str();
-        let moudle = meta.module_path();
+        let module = meta.module_path();
         let file = meta.file();
         let line = meta.line();
 
@@ -107,13 +107,7 @@ impl tracing::Subscriber for Subscriber {
             kvs: &mut kvs,
         });
 
-        let conn = self.connection.lock().unwrap();
-        let now = OffsetDateTime::now_utc();
-        conn.execute(
-            "INSERT INTO logs_v0 (time, level, module, file, line, message, structured) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            (now, level, moudle, file, line, message, serde_json::to_string(&kvs).unwrap()),
-        )
-        .unwrap();
+        self.logger.log_v0(level, module, file, line, &message, kvs);
     }
 
     fn enter(&self, _span: &span::Id) {}
@@ -173,7 +167,7 @@ impl SubscriberBuilder {
 
     pub fn build(self, conn: Connection) -> Subscriber {
         Subscriber::with_details(
-            Mutex::new(conn),
+            RwLock::new(conn),
             self.max_level,
             self.black_list,
             self.white_list,
