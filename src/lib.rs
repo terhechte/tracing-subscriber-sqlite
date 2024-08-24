@@ -1,3 +1,4 @@
+pub use db::*;
 mod db;
 
 use std::{
@@ -6,7 +7,7 @@ use std::{
     sync::{atomic::AtomicU64, Arc, RwLock},
 };
 
-use db::{prepare_database, LogHandle};
+use db::prepare_database;
 use rusqlite::Connection;
 use tracing::{field::Visit, level_filters::LevelFilter, span};
 #[cfg(feature = "tracing-log")]
