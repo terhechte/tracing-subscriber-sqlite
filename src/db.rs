@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    sync::{Arc, RwLock},
+    sync::{Arc, Mutex},
 };
 
 use rusqlite::Connection;
@@ -13,7 +13,8 @@ pub(crate) fn prepare_database(conn: &Connection) -> rusqlite::Result<()> {
 }
 
 #[derive(Clone)]
-pub struct LogHandle(pub(crate) Arc<RwLock<Connection>>);
+// Here we are using Mutex instead of RwLock because Connection did not implement Sync
+pub struct LogHandle(pub(crate) Arc<Mutex<Connection>>);
 
 #[derive(Debug)]
 pub struct LogEntry {
@@ -27,8 +28,12 @@ pub struct LogEntry {
 }
 
 impl LogHandle {
+    pub fn new(connection: Connection) -> Self {
+        Self(Arc::new(Mutex::new(connection)))
+    }
+
     pub fn read_logs_v0(&self) -> rusqlite::Result<Vec<LogEntry>> {
-        let conn = self.0.read().unwrap();
+        let conn = self.0.lock().unwrap();
 
         let mut stmt = conn.prepare("SELECT * FROM logs_v0")?;
         let log_iter = stmt.query_map([], |row| {
@@ -55,7 +60,7 @@ impl LogHandle {
         message: &str,
         kvs: HashMap<&str, String>,
     ) {
-        let conn = self.0.read().unwrap();
+        let conn = self.0.lock().unwrap();
         let now = OffsetDateTime::now_utc();
         conn.execute(
                 "INSERT INTO logs_v0 (time, level, module, file, line, message, structured) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",

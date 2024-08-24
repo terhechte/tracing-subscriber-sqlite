@@ -1,11 +1,7 @@
 pub use db::*;
 mod db;
 
-use std::{
-    collections::HashMap,
-    fmt::Write,
-    sync::{atomic::AtomicU64, Arc, RwLock},
-};
+use std::{collections::HashMap, fmt::Write, sync::atomic::AtomicU64};
 
 use db::prepare_database;
 use rusqlite::Connection;
@@ -27,14 +23,14 @@ impl Subscriber {
     }
 
     fn with_details(
-        logger: RwLock<Connection>,
+        logger: Connection,
         max_level: LevelFilter,
         black_list: Option<Box<[&'static str]>>,
         white_list: Option<Box<[&'static str]>>,
     ) -> Self {
         Self {
             id: AtomicU64::new(1),
-            logger: LogHandle(Arc::new(logger)),
+            logger: LogHandle::new(logger),
             max_level,
             black_list,
             white_list,
@@ -42,7 +38,7 @@ impl Subscriber {
     }
 
     pub fn with_max_level(connection: Connection, max_level: LevelFilter) -> Self {
-        Self::with_details(RwLock::new(connection), max_level, None, None)
+        Self::with_details(connection, max_level, None, None)
     }
 
     pub fn black_list(&self) -> Option<&[&'static str]> {
@@ -167,12 +163,7 @@ impl SubscriberBuilder {
     }
 
     pub fn build(self, conn: Connection) -> Subscriber {
-        Subscriber::with_details(
-            RwLock::new(conn),
-            self.max_level,
-            self.black_list,
-            self.white_list,
-        )
+        Subscriber::with_details(conn, self.max_level, self.black_list, self.white_list)
     }
 
     pub fn build_prepared(self, conn: Connection) -> Result<Subscriber, rusqlite::Error> {
