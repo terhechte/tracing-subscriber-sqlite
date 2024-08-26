@@ -1,26 +1,23 @@
+mod db;
+
+pub use db::*;
+
 use std::{
     collections::HashMap,
     fmt::Write,
-    sync::{atomic::AtomicU64, Mutex},
+    sync::{atomic::AtomicU64, Arc, Mutex},
 };
 
 use rusqlite::Connection;
-use time::OffsetDateTime;
 use tracing::{field::Visit, level_filters::LevelFilter, span};
 #[cfg(feature = "tracing-log")]
 use tracing_log::NormalizeEvent;
-
-pub const SQL_SCHEMA: &str = include_str!("../schema/log.sql");
-
-pub fn prepare_database(conn: &Connection) -> rusqlite::Result<()> {
-    conn.execute(SQL_SCHEMA, ()).map(|_| {})
-}
 
 /// A `Layer` to write events to a sqlite database.
 /// This type can be composed with other `Subscriber`s and `Layer`s.
 #[derive(Debug)]
 pub struct Layer {
-    connection: Mutex<Connection>,
+    logger: LogHandle,
     max_level: LevelFilter,
     black_list: Option<Box<[&'static str]>>,
     white_list: Option<Box<[&'static str]>>,
@@ -67,7 +64,7 @@ impl Layer {
         let meta = event.metadata();
 
         let level = meta.level().as_str();
-        let moudle = meta.module_path();
+        let module = meta.module_path();
         let file = meta.file();
         let line = meta.line();
 
@@ -79,13 +76,7 @@ impl Layer {
             kvs: &mut kvs,
         });
 
-        let conn = self.connection.lock().unwrap();
-        let now = OffsetDateTime::now_utc();
-        conn.execute(
-            "INSERT INTO logs_v0 (time, level, module, file, line, message, structured) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            (now, level, moudle, file, line, message, serde_json::to_string(&kvs).unwrap()),
-        )
-        .unwrap();
+        self.logger.log_v0(level, module, file, line, &message, kvs);
     }
 
     pub fn to_subscriber(self) -> Subscriber {
@@ -129,7 +120,7 @@ impl Subscriber {
 
     pub fn with_max_level(connection: Connection, max_level: LevelFilter) -> Self {
         Self::with_layer(Layer {
-            connection: Mutex::new(connection),
+            logger: LogHandle(Arc::new(Mutex::new(connection))),
             max_level,
             black_list: None,
             white_list: None,
@@ -222,27 +213,31 @@ impl SubscriberBuilder {
         }
     }
 
-    pub fn build(self, conn: Connection) -> Subscriber {
+    pub fn build(self, conn: Arc<Mutex<Connection>>) -> Subscriber {
         self.build_layer(conn).to_subscriber()
     }
 
-    pub fn build_prepared(self, conn: Connection) -> Result<Subscriber, rusqlite::Error> {
-        prepare_database(&conn)?;
-
+    pub fn build_prepared(
+        self,
+        conn: Arc<Mutex<Connection>>,
+    ) -> Result<Subscriber, rusqlite::Error> {
         self.build_layer_prepared(conn).map(|l| l.to_subscriber())
     }
 
-    pub fn build_layer(self, conn: Connection) -> Layer {
+    pub fn build_layer(self, conn: Arc<Mutex<Connection>>) -> Layer {
         Layer {
-            connection: Mutex::new(conn),
+            logger: LogHandle(conn),
             max_level: self.max_level,
             black_list: self.black_list,
             white_list: self.white_list,
         }
     }
 
-    pub fn build_layer_prepared(self, conn: Connection) -> Result<Layer, rusqlite::Error> {
-        prepare_database(&conn)?;
+    pub fn build_layer_prepared(
+        self,
+        conn: Arc<Mutex<Connection>>,
+    ) -> Result<Layer, rusqlite::Error> {
+        prepare_database(&*conn.lock().unwrap())?;
 
         Ok(self.build_layer(conn))
     }
