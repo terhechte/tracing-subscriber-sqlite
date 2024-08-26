@@ -6,13 +6,13 @@ use std::{
 use rusqlite::Connection;
 use time::OffsetDateTime;
 
-pub(crate) const SQL_SCHEMA: &str = include_str!("../schema/log.sql");
+pub const SQL_SCHEMA: &str = include_str!("../schema/log.sql");
 
-pub(crate) fn prepare_database(conn: &Connection) -> rusqlite::Result<()> {
+pub fn prepare_database(conn: &Connection) -> rusqlite::Result<()> {
     conn.execute(SQL_SCHEMA, ()).map(|_| {})
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 // Here we are using Mutex instead of RwLock because Connection did not implement Sync
 pub struct LogHandle(pub(crate) Arc<Mutex<Connection>>);
 
