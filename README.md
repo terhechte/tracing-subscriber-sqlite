@@ -20,7 +20,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         tracing_subscriber_sqlite::SubscriberBuilder::new() // builder pattern
             .with_black_list(["h2::client", "h2::codec"]) // filter logs from `h2::client` and `h2::codec`
             .with_white_list(["h2"]) // only enable logs from `h2`
-            .build_prepared(conn)?, // prepare database and build the subscriber
+            .build_prepared(Arc::new(Mutex::new(conn)))?, // prepare database and build the subscriber
     )?;
 
     tracing::info!(x = 1, "test"); // structured data is stored as JSON

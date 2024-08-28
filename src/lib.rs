@@ -1,6 +1,7 @@
 mod db;
 
 pub use db::*;
+use time::OffsetDateTime;
 
 use std::{
     collections::HashMap,
@@ -16,14 +17,14 @@ use tracing_log::NormalizeEvent;
 /// A `Layer` to write events to a sqlite database.
 /// This type can be composed with other `Subscriber`s and `Layer`s.
 #[derive(Debug)]
-pub struct Layer {
-    logger: LogHandle,
+pub struct Layer<C> {
+    logger: C,
     max_level: LevelFilter,
     black_list: Option<Box<[&'static str]>>,
     white_list: Option<Box<[&'static str]>>,
 }
 
-impl Layer {
+impl<C> Layer<C> {
     pub fn black_list(&self) -> Option<&[&'static str]> {
         self.black_list.as_deref()
     }
@@ -50,6 +51,12 @@ impl Layer {
         Some(self.max_level)
     }
 
+    pub fn to_subscriber(self) -> Subscriber<C> {
+        Subscriber::with_layer(self)
+    }
+}
+
+impl<C: Connect> Layer<C> {
     fn on_event(&self, event: &tracing::Event<'_>) {
         #[cfg(feature = "tracing-log")]
         let normalized_meta = event.normalized_metadata();
@@ -63,29 +70,33 @@ impl Layer {
         #[cfg(not(feature = "tracing-log"))]
         let meta = event.metadata();
 
-        let level = meta.level().as_str();
+        let level = *meta.level();
         let module = meta.module_path();
         let file = meta.file();
         let line = meta.line();
 
         let mut message = String::new();
-        let mut kvs = HashMap::new();
+        let mut structured = HashMap::new();
 
         event.record(&mut Visitor {
             message: &mut message,
-            kvs: &mut kvs,
+            kvs: &mut structured,
         });
 
-        self.logger.log_v0(level, module, file, line, &message, kvs);
-    }
-
-    pub fn to_subscriber(self) -> Subscriber {
-        Subscriber::with_layer(self)
+        self.logger.log(LogEntry {
+            time: OffsetDateTime::now_utc(),
+            level,
+            module,
+            file,
+            line,
+            message,
+            structured,
+        });
     }
 }
 
 #[cfg(feature = "layer")]
-impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for Layer {
+impl<S: tracing::Subscriber, C: Connect + 'static> tracing_subscriber::Layer<S> for Layer<C> {
     fn enabled(
         &self,
         metadata: &tracing::Metadata<'_>,
@@ -101,26 +112,26 @@ impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for Layer {
 
 /// A simple `Subscriber` that wraps `Layer`[crate::Layer].
 #[derive(Debug)]
-pub struct Subscriber {
+pub struct Subscriber<C> {
     id: AtomicU64,
-    layer: Layer,
+    layer: Layer<C>,
 }
 
-impl Subscriber {
-    pub fn new(connection: Connection) -> Self {
+impl<C> Subscriber<C> {
+    pub fn new(connection: C) -> Self {
         Self::with_max_level(connection, LevelFilter::TRACE)
     }
 
-    fn with_layer(layer: Layer) -> Self {
+    fn with_layer(layer: Layer<C>) -> Self {
         Self {
             id: AtomicU64::new(1),
             layer,
         }
     }
 
-    pub fn with_max_level(connection: Connection, max_level: LevelFilter) -> Self {
+    pub fn with_max_level(connection: C, max_level: LevelFilter) -> Self {
         Self::with_layer(Layer {
-            logger: LogHandle(Arc::new(Mutex::new(connection))),
+            logger: connection,
             max_level,
             black_list: None,
             white_list: None,
@@ -136,7 +147,7 @@ impl Subscriber {
     }
 }
 
-impl tracing::Subscriber for Subscriber {
+impl<C: Connect + 'static> tracing::Subscriber for Subscriber<C> {
     fn enabled(&self, metadata: &tracing::Metadata<'_>) -> bool {
         self.layer.enabled(metadata)
     }
@@ -213,20 +224,20 @@ impl SubscriberBuilder {
         }
     }
 
-    pub fn build(self, conn: Arc<Mutex<Connection>>) -> Subscriber {
+    pub fn build<C>(self, conn: C) -> Subscriber<C> {
         self.build_layer(conn).to_subscriber()
     }
 
     pub fn build_prepared(
         self,
         conn: Arc<Mutex<Connection>>,
-    ) -> Result<Subscriber, rusqlite::Error> {
+    ) -> Result<Subscriber<Arc<Mutex<Connection>>>, rusqlite::Error> {
         self.build_layer_prepared(conn).map(|l| l.to_subscriber())
     }
 
-    pub fn build_layer(self, conn: Arc<Mutex<Connection>>) -> Layer {
+    pub fn build_layer<C>(self, conn: C) -> Layer<C> {
         Layer {
-            logger: LogHandle(conn),
+            logger: conn,
             max_level: self.max_level,
             black_list: self.black_list,
             white_list: self.white_list,
@@ -236,7 +247,7 @@ impl SubscriberBuilder {
     pub fn build_layer_prepared(
         self,
         conn: Arc<Mutex<Connection>>,
-    ) -> Result<Layer, rusqlite::Error> {
+    ) -> Result<Layer<Arc<Mutex<Connection>>>, rusqlite::Error> {
         prepare_database(&*conn.lock().unwrap())?;
 
         Ok(self.build_layer(conn))
