@@ -82,3 +82,9 @@ impl Connect for Arc<Mutex<Connection>> {
         self.as_ref().log(entry)
     }
 }
+
+impl Connect for LogHandle {
+    fn log(&self, entry: LogEntry<&str>) {
+        self.0.log(entry)
+    }
+}
