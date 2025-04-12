@@ -9,7 +9,7 @@ authors = ["snylonue <snylonue@gmail.com>"]
 description = "A tracing Subscriber to send log to sqlite database."
 
 [dependencies]
-rusqlite = { version = "0.30", features = ["bundled", "time"] }
+rusqlite = { version = "0.34", features = ["bundled", "time"] }
 serde_json = "1.0.122"
 time = "0.3.36"
 tracing = "0.1.40"

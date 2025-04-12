@@ -39,11 +39,11 @@ impl<C> Layer<C> {
 
     fn enabled(&self, metadata: &tracing::Metadata<'_>) -> bool {
         metadata.level() <= self.max_level()
-            && metadata.module_path().map_or(true, |m| {
+            && metadata.module_path().is_none_or(|m| {
                 let starts_with = |module: &&str| m.starts_with(module);
                 let has_module = |modules: &[&str]| modules.iter().any(starts_with);
-                self.white_list().map_or(true, has_module)
-                    && !(self.black_list().map_or(false, has_module))
+                self.white_list().is_none_or(has_module)
+                    && !(self.black_list().is_some_and(has_module))
             })
     }
 
@@ -179,7 +179,7 @@ struct Visitor<'a> {
     pub kvs: &'a mut HashMap<&'static str, String>, // todo: store structured key-value data
 }
 
-impl<'a> Visit for Visitor<'a> {
+impl Visit for Visitor<'_> {
     fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
         match field.name() {
             "message" => write!(self.message, "{value:?}").unwrap(),
@@ -248,7 +248,7 @@ impl SubscriberBuilder {
         self,
         conn: Arc<Mutex<Connection>>,
     ) -> Result<Layer<Arc<Mutex<Connection>>>, rusqlite::Error> {
-        prepare_database(&*conn.lock().unwrap())?;
+        prepare_database(&conn.lock().unwrap())?;
 
         Ok(self.build_layer(conn))
     }
